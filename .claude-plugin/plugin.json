@@ -1,0 +1,8 @@
+{
+  "name": "intervals-time-entry",
+  "version": "1.0.0",
+  "description": "Fill Intervals Online time entries from daily notes using browser automation",
+  "author": "olivoil",
+  "repository": "https://github.com/olivoil/intervals-time-entry",
+  "keywords": ["intervals", "time-entry", "timesheet", "automation", "browser"]
+}
