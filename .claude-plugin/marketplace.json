@@ -11,7 +11,10 @@
   "plugins": [
     {
       "name": "intervals-time-entry",
-      "source": ".",
+      "source": {
+        "source": "github",
+        "repo": "olivoil/intervals-time-entry"
+      },
       "description": "Fill Intervals from daily notes, sync Intervals to FreshBooks",
       "version": "1.1.0",
       "author": {
