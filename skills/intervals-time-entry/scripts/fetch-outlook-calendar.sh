@@ -119,7 +119,16 @@ if [ -n "$ERROR" ]; then
 fi
 
 # Process events into structured output
-echo "$RESPONSE" | jq --arg date "$DATE" --arg tz "$TIMEZONE" '{
+# Note: Graph API returns datetimes like "2026-02-04T09:00:00.0000000" (with fractional seconds,
+# no timezone suffix) when a Prefer timezone header is used. We strip fractional seconds and
+# append "Z" to make them valid for jq's fromdateiso8601. Since both start and end are in the
+# same timezone, the duration difference is correct regardless of the Z suffix.
+echo "$RESPONSE" | jq --arg date "$DATE" --arg tz "$TIMEZONE" '
+    # Parse a Graph API datetime string to epoch seconds
+    def to_epoch: split(".")[0] + "Z" | fromdateiso8601;
+    # Compute duration in hours between two Graph API datetime strings, rounded to 2 decimals
+    def duration_hrs(s; e): ((e | to_epoch) - (s | to_epoch)) / 3600 * 100 | round / 100;
+{
     date: $date,
     timezone: $tz,
     events: [
@@ -131,17 +140,7 @@ echo "$RESPONSE" | jq --arg date "$DATE" --arg tz "$TIMEZONE" '{
             end: .end.dateTime,
             start_time: (.start.dateTime | split("T")[1] | split(".")[0] | .[0:5]),
             end_time: (.end.dateTime | split("T")[1] | split(".")[0] | .[0:5]),
-            duration_hours: (
-                ((.end.dateTime | split("T") |
-                    ((.[0] | split("-") | (.[0] | tonumber) * 365 * 24 + (.[1] | tonumber) * 30 * 24 + (.[2] | tonumber) * 24) +
-                     (.[1] | split(".")[0] | split(":") | (.[0] | tonumber) + (.[1] | tonumber) / 60 + (.[2] | tonumber) / 3600))
-                ) -
-                (.start.dateTime | split("T") |
-                    ((.[0] | split("-") | (.[0] | tonumber) * 365 * 24 + (.[1] | tonumber) * 30 * 24 + (.[2] | tonumber) * 24) +
-                     (.[1] | split(".")[0] | split(":") | (.[0] | tonumber) + (.[1] | tonumber) / 60 + (.[2] | tonumber) / 3600))
-                ))
-                | . * 100 | round / 100
-            ),
+            duration_hours: duration_hrs(.start.dateTime; .end.dateTime),
             is_all_day: .isAllDay,
             location: (.location.displayName // null),
             organizer: .organizer.emailAddress.name,
@@ -169,14 +168,7 @@ echo "$RESPONSE" | jq --arg date "$DATE" --arg tz "$TIMEZONE" '{
         total_events: ([.value[] | select(.isCancelled != true)] | length),
         total_meeting_hours: (
             [.value[] | select(.isCancelled != true and .isAllDay != true) |
-                ((.end.dateTime | split("T") |
-                    ((.[0] | split("-") | (.[0] | tonumber) * 365 * 24 + (.[1] | tonumber) * 30 * 24 + (.[2] | tonumber) * 24) +
-                     (.[1] | split(".")[0] | split(":") | (.[0] | tonumber) + (.[1] | tonumber) / 60 + (.[2] | tonumber) / 3600))
-                ) -
-                (.start.dateTime | split("T") |
-                    ((.[0] | split("-") | (.[0] | tonumber) * 365 * 24 + (.[1] | tonumber) * 30 * 24 + (.[2] | tonumber) * 24) +
-                     (.[1] | split(".")[0] | split(":") | (.[0] | tonumber) + (.[1] | tonumber) / 60 + (.[2] | tonumber) / 3600))
-                ))
+                duration_hrs(.start.dateTime; .end.dateTime)
             ] | add // 0 | . * 100 | round / 100
         ),
         all_day_events: ([.value[] | select(.isCancelled != true and .isAllDay == true)] | length)
