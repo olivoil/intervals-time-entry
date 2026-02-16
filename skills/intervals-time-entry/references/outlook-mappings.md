@@ -41,8 +41,7 @@ Calendar events provide exact meeting durations. Use these to validate notes:
 | Notes say "meeting", no duration | Use calendar duration |
 | Calendar shows 30min, notes say 2h | Meeting may have extended, or includes prep - keep notes |
 | Calendar shows all-day event | Ignore for duration (it's a reminder, not a meeting) |
-| Event declined (responseStatus: declined) | Skip - user didn't attend |
-| Event tentative (responseStatus: tentativelyAccepted) | Include but flag as uncertain |
+| Event has strikethrough/dimmed text | Skip - user declined, didn't attend |
 
 ## Description Enhancement from Calendar
 

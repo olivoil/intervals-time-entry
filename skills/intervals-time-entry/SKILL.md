@@ -1,7 +1,7 @@
 ---
 name: intervals-time-entry
 description: Fill Intervals Online time entries from daily notes with GitHub and Outlook calendar correlation. Use when asked to fill time entries, timesheets, or submit hours to Intervals. Requires chrome-devtools MCP with browser open to Intervals.
-allowed-tools: mcp__chrome-devtools__*, Bash(op read*), Bash(gh *), Bash(bash .claude/intervals-cache/*.sh *), Bash(curl -s *graph.microsoft.com*), Read, Write, Edit
+allowed-tools: mcp__chrome-devtools__*, Bash(op read*), Bash(gh *), Bash(bash .claude/intervals-cache/*.sh *), Read, Write, Edit
 ---
 
 # Intervals Time Entry Automation
@@ -23,8 +23,7 @@ Fill time entries in Intervals Online from Obsidian daily notes using MCP chrome
 ├── project-mappings.md         # Project→workType mappings
 ├── github-mappings.md          # Repo→project mappings
 ├── outlook-mappings.md         # Calendar→project mappings
-├── fetch-github-activity.sh    # GitHub activity fetcher script
-└── fetch-outlook-calendar.sh   # Outlook calendar fetcher script
+└── fetch-github-activity.sh    # GitHub activity fetcher script
 ```
 
 These files persist between sessions. If they don't exist, create them from the plugin's `references/` and `scripts/` directories.
@@ -66,6 +65,8 @@ This returns JSON with:
 - PRs authored (created or updated)
 - PRs reviewed
 - Events with timestamps (commits, reviews, comments)
+
+**IMPORTANT**: The script output already includes PR titles and body snippets in `prs_authored`, `prs_active`, and `prs_reviewed`. Do NOT make separate `gh pr view` calls — use the data already returned by the script.
 
 #### Step 3: Correlate with Notes
 
@@ -119,51 +120,64 @@ Example output:
    - EWG: 0.5-1h Architecture/Technical Design (PR reviews #12, #13, #14)
 ```
 
-### Phase 1.7: Outlook Calendar Correlation
+### Phase 1.7: Outlook Calendar Correlation (REQUIRED)
 
-**Run this phase** to fetch Outlook calendar events and cross-reference with notes and GitHub activity.
+**ALWAYS run this phase** to visually read the Outlook calendar and cross-reference with notes and GitHub activity.
 
-#### Step 1: Ensure Script Is Up-to-Date
+**Prerequisite**: User must be logged into Outlook Web in the browser (same Chrome instance with `--remote-debugging-port=9222`).
 
-The script has a version number on line 2 (e.g., `# Version: 1`). Check and update if needed:
+#### Step 1: Find or Open Outlook Web Tab
 
-1. Read the plugin script: `~/.claude/skills/intervals-time-entry/scripts/fetch-outlook-calendar.sh`
-2. Extract the version number from line 2
-3. If `.claude/intervals-cache/fetch-outlook-calendar.sh` exists, extract its version number
-4. If the cached script doesn't exist OR the plugin version is higher, copy the plugin script to `.claude/intervals-cache/fetch-outlook-calendar.sh`
+**IMPORTANT**: Never navigate away from the user's current tab. Always find an existing Outlook tab or create a new one.
 
-#### Step 2: Check Prerequisites
+1. Call `list_pages` to see all open browser tabs
+2. Look for a tab with URL containing `outlook.office.com` or `outlook.live.com`
+3. If found: call `select_page` with that page's ID
+4. If NOT found: call `new_page` with the day view URL (see Step 2)
 
-Outlook calendar requires OAuth tokens at `~/.config/outlook/tokens.json`. If the file doesn't exist:
-1. Inform the user: "Outlook calendar integration requires one-time OAuth setup"
-2. Run `bash ~/.claude/skills/intervals-time-entry/scripts/outlook-oauth.sh authorize` to get the auth URL
-3. Guide the user through the OAuth flow
-4. Once tokens are saved, proceed
+#### Step 2: Navigate, Verify, and Extract Calendar Data
 
-If tokens exist, the fetch script handles auto-refresh.
+**Navigate** to the target date's day view:
 
-#### Step 3: Fetch Calendar Events
-
-**Run this command** (replace YYYY-MM-DD with the target date):
-```bash
-bash .claude/intervals-cache/fetch-outlook-calendar.sh YYYY-MM-DD
+```
+https://outlook.office.com/calendar/view/day/YYYY/M/D
 ```
 
-This returns JSON with:
-- Calendar events for the date (subject, times, duration, attendees, body preview)
-- Calculated meeting durations in hours
-- Summary with total events and total meeting hours
+Note: month and day are **not zero-padded** (e.g., `2026/2/16` not `2026/02/16`).
 
-#### Step 4: Correlate with Notes and GitHub
+- If the tab is already on Outlook but wrong date: call `navigate_page` with the day view URL
+- If a new tab was created in Step 1: it will already be on the correct URL
 
-Using the JSON output from Step 3, cross-reference with notes and GitHub data:
+**Verify the date** — immediately after navigation, call `take_screenshot` and confirm the calendar is showing the correct date. The date header is visible at the top of the day view.
+
+- If the screenshot shows the **wrong date**: wait 3 seconds, then call `navigate_page` again with the same URL. Take another screenshot to verify.
+- If still wrong after retry: try the alternative URL format with zero-padded month/day (e.g., `2026/02/04` instead of `2026/2/4`). Take a screenshot to verify.
+- **Only proceed once the correct date is confirmed** in the screenshot.
+
+**Extract calendar data** visually from the verified screenshot:
+
+- **Meeting subjects** — the text on each calendar block
+- **Start and end times** — from the time labels on the left axis and block positions
+- **Duration** — calculated from start/end times
+- **Declined events** — shown with strikethrough text or dimmed/crossed-out appearance
+- **All-day events** — shown in the top banner area (above the hourly grid)
+- **Attendee names** — visible if shown in the calendar block
+- **Location** — if visible in the calendar block
+
+If the calendar is zoomed out and events are hard to read, note which events need clarification and proceed with what's visible.
+
+**CRITICAL**: Use `take_screenshot` for visual reading — do NOT use `take_snapshot`, DOM inspection, or click-based navigation for calendar data extraction. The entire point of this phase is visual analysis without brittle DOM dependencies. If the screenshot is unclear, take another screenshot — never fall back to DOM snapshots or clicking calendar elements.
+
+#### Step 3: Correlate with Notes and GitHub
+
+Using the visually extracted calendar data, cross-reference with notes and GitHub data:
 
 1. **Match meetings to time entries**: If notes mention a meeting that appears in the calendar, link them
 2. **Infer project from attendees**: Use `people-context.md` to determine which project a meeting belongs to
 3. **Infer project from subject**: Match calendar subjects against `project-mappings.md` terms
 4. **Learn calendar mappings**: When a calendar event clearly maps to a project, add to `.claude/intervals-cache/outlook-mappings.md`
 
-#### Step 5: Detect Missing Entries
+#### Step 4: Detect Missing Entries
 
 Compare calendar events against notes and flag gaps:
 
@@ -171,13 +185,13 @@ Compare calendar events against notes and flag gaps:
 
 ```
 📅 Calendar shows "Technomic-EXSQ Weekly Touchbase" (11:00-12:00, 1h)
-   with Russell Cummings, Bhrugen — but no matching time entry in notes.
+   — but no matching time entry in notes.
    Suggest: Ignite Application Development & Support | Meeting: Client Meeting - US | 1h
 ```
 
-**Declined/tentative events**: Skip declined events. Flag tentative events as uncertain.
+**Declined events**: Skip events with strikethrough/dimmed appearance (user declined). **All-day events**: Ignore for time entries (they're reminders, not meetings).
 
-#### Step 6: Validate Durations
+#### Step 5: Validate Durations
 
 Compare calendar durations against note durations and flag discrepancies:
 
@@ -196,28 +210,27 @@ Compare calendar durations against note durations and flag discrepancies:
 - If notes duration is significantly less than calendar, suggest the calendar duration
 - If notes duration is more than calendar, the meeting may have included prep/follow-up — keep notes but flag
 - All-day events are reminders, not meetings — ignore for duration
-- Events the user declined should be excluded entirely
+- Events the user declined (strikethrough) should be excluded entirely
 
-#### Step 7: Enhance Descriptions
+#### Step 6: Enhance Descriptions
 
 **Improve meeting descriptions** when calendar data provides more context:
 
 | Notes say | Calendar shows | Final description |
 |-----------|---------------|-------------------|
-| "meeting" | "Technomic-EXSQ Weekly Touchbase" with Russell, Bhrugen | Weekly touchbase with Technomic (Russell, Bhrugen) |
-| "EWG sync" | "Weekly EX2 <> EWG Sync" with Joy, Don | EWG weekly sync with Joy Jiang and Don Schminke |
+| "meeting" | "Technomic-EXSQ Weekly Touchbase" | Weekly touchbase with Technomic |
+| "EWG sync" | "Weekly EX2 <> EWG Sync" | EWG weekly sync |
 | "standup" | "Technomic Scrum" | Technomic daily scrum |
-| "1:1" | "1:1 with Chris" body: "AI upskill progress" | 1:1 with Chris - AI upskill progress |
-| "client call" | "Drees Design Review" with 5 attendees | Drees design review with client team |
+| "1:1" | "1:1 with Chris" | 1:1 with Chris |
+| "client call" | "Drees Design Review" | Drees design review |
 
 **Rules:**
 - Use calendar subject as primary description when it's more specific than notes
-- Add key attendee names (especially client names from `people-context.md`)
-- Include body/agenda highlights if they add useful context (keep brief)
+- Add attendee names visible in the calendar block (especially client names from `people-context.md`)
 - For recurring meetings, note any distinguishing details from this specific instance
 - Combine with GitHub context when applicable (e.g., meeting + PR demo)
 
-#### Step 8: Time Gap Analysis
+#### Step 7: Time Gap Analysis
 
 Use calendar events + GitHub commits to build a picture of the full workday:
 
@@ -417,9 +430,7 @@ On first use in a new project, Claude will:
 6. If not, create it from the plugin's `references/outlook-mappings.md` template
 7. Check if `.claude/intervals-cache/fetch-github-activity.sh` exists and compare version
 8. If missing or outdated, copy from the plugin's `scripts/fetch-github-activity.sh`
-9. Check if `.claude/intervals-cache/fetch-outlook-calendar.sh` exists and compare version
-10. If missing or outdated, copy from the plugin's `scripts/fetch-outlook-calendar.sh`
-11. Use and update these local caches going forward
+9. Use and update these local caches going forward
 
 ## Efficiency
 
@@ -428,7 +439,7 @@ This skill is optimized for minimal browser interaction:
 - **Auto-updating cache** means you only inspect each project ONCE ever
 - **Single script execution** fills all entries
 - **GitHub correlation** runs once via `gh` CLI, no browser needed
-- **Outlook calendar** runs once via Microsoft Graph API, no browser needed
+- **Outlook calendar** uses a single browser screenshot — no API tokens or scripts needed
 - **Learned repo mappings** improve correlation accuracy over time
 - **Learned calendar mappings** improve meeting→project accuracy over time
 - **Cross-source validation** catches discrepancies between notes, calendar, and GitHub
