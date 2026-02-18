@@ -21,7 +21,8 @@
       "repository": "https://github.com/olivoil/om-skills",
       "license": "MIT",
       "keywords": ["intervals", "freshbooks", "time-entry", "obsidian", "productivity", "automation"],
-      "category": "productivity"
+      "category": "productivity",
+      "skills": ["./skills/"]
     }
   ]
 }
