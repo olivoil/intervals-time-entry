@@ -1,29 +1,29 @@
 {
-  "name": "tt",
+  "name": "om",
   "owner": {
     "name": "olivoil",
     "email": "olivoil@users.noreply.github.com"
   },
   "metadata": {
-    "description": "Time entry automation for Intervals and FreshBooks with Outlook calendar integration",
-    "version": "1.2.0"
+    "description": "Personal Claude Code skills collection",
+    "version": "2.0.0"
   },
   "plugins": [
     {
-      "name": "tt",
+      "name": "om",
       "source": {
         "source": "github",
-        "repo": "olivoil/intervals-time-entry"
+        "repo": "olivoil/om-skills"
       },
-      "description": "Fill Intervals from daily notes with GitHub and Outlook calendar correlation, sync to FreshBooks",
-      "version": "1.2.0",
+      "description": "Personal Claude Code skills collection: Intervals time entries, FreshBooks sync, session summaries, and more",
+      "version": "2.0.0",
       "author": {
         "name": "olivoil"
       },
-      "homepage": "https://github.com/olivoil/intervals-time-entry",
-      "repository": "https://github.com/olivoil/intervals-time-entry",
+      "homepage": "https://github.com/olivoil/om-skills",
+      "repository": "https://github.com/olivoil/om-skills",
       "license": "MIT",
-      "keywords": ["intervals", "freshbooks", "time-entry", "timesheet", "automation", "outlook", "calendar"],
+      "keywords": ["intervals", "freshbooks", "time-entry", "obsidian", "productivity", "automation"],
       "category": "productivity"
     }
   ]

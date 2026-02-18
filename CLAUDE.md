@@ -4,19 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Claude Code plugin (`tt`) that automates time entry management between **Intervals Online** and **FreshBooks**, with **GitHub** and **Outlook calendar** correlation. It consists of two skills invoked via slash commands:
+This is a Claude Code plugin (`om`) — a personal skills collection. Current skills:
 
 - `/intervals-time-entry [date]` — Fill Intervals time entries from daily notes (`📅 Daily Notes/YYYY-MM-DD.md`)
 - `/intervals-to-freshbooks [week-start]` — Sync a week of Intervals entries to FreshBooks
+- `/done` — Capture session summary into Obsidian vault and link from daily note
 
 There is no build system, test suite, or linter. The project is pure JavaScript (browser scripts executed via chrome-devtools MCP) and Bash (API utilities).
 
 ## Architecture
 
-### Two-Skill Structure
+### Skills Structure
 
 ```
 skills/
+├── done/                       # Session summary → Obsidian vault
+│   └── SKILL.md                # Workflow definition
 ├── intervals-time-entry/       # Notes → Intervals (browser automation)
 │   ├── SKILL.md                # Workflow definition (6 phases + GitHub/Outlook correlation)
 │   ├── references/             # Mapping files (project, worktype, github, outlook, people)
@@ -85,7 +88,7 @@ The skill reads the Outlook calendar visually via browser screenshot (chrome-dev
 
 Plugin metadata lives in `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`. Install with:
 ```bash
-claude plugin install intervals-time-entry@olivoil
+claude plugin install om-skills@olivoil
 ```
 
 ## Testing Local Changes
@@ -94,16 +97,16 @@ To test plugin changes before pushing, use `--plugin-dir` from the **consumer pr
 
 ```bash
 # 1. Disable the installed version so it doesn't conflict
-claude plugin disable tt
+claude plugin disable om
 
 # 2. Run with local plugin source (path to this repo's checkout)
-claude --plugin-dir /path/to/intervals-time-entry/
+claude --plugin-dir /path/to/skills/
 
 # 3. Test the skill as usual
 #    > /intervals-time-entry 2026-02-04
 
 # 4. Re-enable the installed version when done
-claude plugin enable tt
+claude plugin enable om
 ```
 
 **Key points:**
