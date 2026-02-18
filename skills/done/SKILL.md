@@ -77,7 +77,18 @@ session: {session-id}
 
 If the daily note doesn't exist, create it.
 
-Look for an existing `### Coding Sessions` section. If found, append the new link under it. If not found, append this block at the end of the file:
+Look for an existing `### Coding Sessions` section. If found, append the new link under it.
+
+If not found, insert a new `### Coding Sessions` section. The daily note typically has this structure:
+
+1. **Hours list** (lines like `- [[Project]] - task - duration`)
+2. **Todos section** (`### Todos`)
+3. **Coding Sessions** ← insert here
+4. **Other notes sections** (e.g. `### Technomic`, `### Khov`, etc.)
+
+To find the right insertion point: look for the first `---` horizontal rule or `###` heading that comes **after** the Todos section. Insert the Coding Sessions block just before it. If there's no Todos section, insert before the first `###` heading that isn't Todos. If there are no other sections at all, append to the end.
+
+The block to insert:
 
 ```markdown
 
