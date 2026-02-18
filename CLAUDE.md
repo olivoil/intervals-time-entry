@@ -9,6 +9,7 @@ This is a Claude Code plugin (`om`) — a personal skills collection. Current sk
 - `/intervals-time-entry [date]` — Fill Intervals time entries from daily notes (`📅 Daily Notes/YYYY-MM-DD.md`)
 - `/intervals-to-freshbooks [week-start]` — Sync a week of Intervals entries to FreshBooks
 - `/done` — Capture session summary into Obsidian vault and link from daily note
+- `/refine [date]` — Improve daily notes: polish writing, add wikilinks, extract long sections, suggest new entities
 
 There is no build system, test suite, or linter. The project is pure JavaScript (browser scripts executed via chrome-devtools MCP) and Bash (API utilities).
 
@@ -24,6 +25,8 @@ skills/
 │   ├── SKILL.md                # Workflow definition (6 phases + GitHub/Outlook correlation)
 │   ├── references/             # Mapping files (project, worktype, github, outlook, people)
 │   └── scripts/                # Browser JS + GitHub fetch bash script
+├── refine/                     # Daily note improvement (wikilinks, extraction)
+│   └── SKILL.md                # Workflow definition (6 phases)
 └── intervals-to-freshbooks/    # Intervals → FreshBooks (API + browser)
     ├── SKILL.md                # Workflow definition (5 phases)
     ├── references/             # Intervals→FreshBooks project mappings
