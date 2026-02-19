@@ -1,7 +1,7 @@
 ---
 name: transcribe-meeting
 description: Transcribe a meeting recording from the Rodecaster SD card, Google Drive, or a local file. Creates a meeting note with summary, decisions, and action items, plus an MP3 archive. Use when the user types /transcribe-meeting or asks to transcribe a recording.
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash(echo $*), Bash(bash skills/transcribe-meeting/*), Bash(ffmpeg *), Bash(ffprobe *), Bash(curl *), Bash(gdown *), Bash(rclone *), Bash(op read*), Bash(whisper* *), Bash(jq *), Bash(file *), Bash(stat *), Bash(ls /tmp/meeting*), Bash(ls /run/media/*), Task
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash(echo $*), Bash(bash skills/transcribe-meeting/*), Bash(ffmpeg *), Bash(ffprobe *), Bash(curl *), Bash(gdown *), Bash(rclone *), Bash(op read*), Bash(whisper* *), Bash(jq *), Bash(file *), Bash(stat *), Bash(ls /tmp/meeting*), Bash(ls /run/media/*), Bash(youtubeuploader *), Bash(ls ~/Videos/*), Task
 ---
 
 # Transcribe Meeting
@@ -9,9 +9,14 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash(echo $*), Bash(bash skills/tr
 Transcribe a meeting recording and create a structured meeting note in the Obsidian vault with summary, decisions, action items, and full transcript.
 
 Input sources (checked in order):
-1. **SD card auto-detect** — Rodecaster recordings for the target date
+1. **Auto-detect** — Screen recordings + Rodecaster recordings for the target date (matched by time overlap)
 2. **Google Drive URL** — if provided as argument
 3. **Local file path** — if provided as argument
+
+Recording modes:
+- **omarchy+rodecaster** — screen recording + Rodecaster WAV matched by start time. Transcribe from Rodecaster (better audio). Upload merged video (Rodecaster audio + screen video) to YouTube + MP3 to Google Drive.
+- **omarchy-only** — screen recording with no matching Rodecaster. Extract audio from MP4 for transcription. Upload original MP4 to YouTube.
+- **rodecaster-only** — Rodecaster recording with no matching screen recording. Upload MP3 to Google Drive only (existing behavior).
 
 ## Workflow
 
@@ -21,25 +26,56 @@ Input sources (checked in order):
 2. Determine the target date: use the argument if a date is provided, otherwise use today.
 3. Determine context: if the user provides additional info (project name, participants, meeting topic), note it. Otherwise, these will be inferred from any surrounding daily note context or left generic.
 
-### Phase 1: Acquire Audio
+### Phase 1: Discover & Match Recordings
 
 Try sources in order:
 
-**Option A: SD Card Auto-Detect (Primary)**
+**Option A: Auto-Detect (Primary)**
 
 If no explicit URL or file path was given:
 
-1. Run the discovery script:
+1. **Discover screen recordings**:
+   ```bash
+   bash skills/transcribe-meeting/scripts/find-screenrecordings.sh "{date}"
+   ```
+   Save the JSON output to a temp file (e.g., `/tmp/screenrecs-{date}.json`).
+
+2. **Discover Rodecaster recordings**:
    ```bash
    bash skills/transcribe-meeting/scripts/find-recordings.sh "{date}"
    ```
-2. If recordings are found, check idempotency — for each recording, search for an existing meeting note:
+   Save the JSON output to a temp file (e.g., `/tmp/rodecaster-{date}.json`).
+
+3. **Match recordings** by time overlap:
+   ```bash
+   bash skills/transcribe-meeting/scripts/match-recordings.sh /tmp/screenrecs-{date}.json /tmp/rodecaster-{date}.json
    ```
-   grep -rl 'recording: "{folder}"' "$VAULT/🎙️ Meetings/"
-   ```
-   Skip any recording that already has a meeting note.
-3. If multiple new recordings exist, present them to the user and ask which to transcribe.
-4. The audio file is the `path` from the JSON output.
+   This produces groups with `mode` (omarchy+rodecaster, omarchy-only, rodecaster-only), `video`, `audio`, and `transcribe_from` fields.
+
+4. **Check idempotency** — for each group, search for existing meeting notes:
+   - By `recording:` field (for groups with Rodecaster audio):
+     ```
+     grep -rl 'recording: "{folder}"' "$VAULT/🎙️ Meetings/"
+     ```
+   - By `video_file:` field (for groups with screen recordings):
+     ```
+     grep -rl 'video_file: "{filename}"' "$VAULT/🎙️ Meetings/"
+     ```
+   Skip any group that already has a meeting note.
+
+5. **Present findings** to the user with mode info for each group:
+   > Found 2 recording groups:
+   > 1. **omarchy-only**: screen recording from 09:36 (30 min) — no matching Rodecaster
+   > 2. **omarchy+rodecaster**: screen recording from 11:02 (51 min) + Rodecaster recording 10 (51 min)
+
+6. **Determine audio source** for transcription:
+   - `omarchy+rodecaster` → audio = Rodecaster WAV (the `audio.path` field)
+   - `omarchy-only` → extract audio from screen recording:
+     ```bash
+     bash skills/transcribe-meeting/scripts/extract-audio.sh "{video.path}"
+     ```
+     Capture the WAV path from stdout.
+   - `rodecaster-only` → audio = Rodecaster WAV (the `audio.path` field)
 
 **Option B: Google Drive URL**
 
@@ -90,6 +126,9 @@ participants:
   - "[[Olivier]]"
 recording: "{folder}"
 audio_url: "{original-url-or-path}"
+video_file: "{screenrecording-filename}"    # only if video exists, for idempotency
+video_url: "{youtube-url}"                  # only after YouTube upload
+recording_mode: "{omarchy+rodecaster|omarchy-only|rodecaster-only}"  # informational
 duration: {estimated-duration}
 tags: [meeting]
 ---
@@ -119,31 +158,46 @@ tags: [meeting]
 ```
 
 Frontmatter notes:
-- **SD card source**: set `recording: "{folder}"` (e.g., `recording: "9 - 18 Feb 2026"`). Set `audio_url` to the WAV path initially — Phase 4 will replace it with the Google Drive URL after upload.
-- **Google Drive source**: set `audio_url: "{url}"`. Omit `recording` field.
+- **omarchy+rodecaster**: set `recording: "{folder}"`, `video_file: "{filename}"`, `recording_mode: "omarchy+rodecaster"`. Set `audio_url` to the WAV path initially — Phase 4 will replace it with the Google Drive URL after upload. Set `video_url` after YouTube upload.
+- **omarchy-only**: set `video_file: "{filename}"`, `recording_mode: "omarchy-only"`. Set `audio_url` to the extracted WAV path initially. Set `video_url` after YouTube upload.
+- **rodecaster-only**: set `recording: "{folder}"`, `recording_mode: "rodecaster-only"`. Set `audio_url` to the WAV path initially — Phase 4 will replace it with the Google Drive URL after upload. Omit `video_file` and `video_url`.
+- **Google Drive source**: set `audio_url: "{url}"`. Omit `recording`, `video_file`, `video_url` fields.
 - **Local file source**: set `audio_url: "{path}"`. Omit `recording` field — Phase 4 will replace it with the Google Drive URL after upload.
 
 **Present the summary, decisions, and action items to the user for approval before writing the file.**
 
-### Phase 4: Compress & Upload to Google Drive
+### Phase 4: Post-Process & Upload
 
-After the meeting note is created, compress the audio and upload it:
+After the meeting note is created, compress audio, merge video if applicable, and upload:
 
-1. **Compress** the WAV to MP3:
-   ```bash
-   bash skills/transcribe-meeting/scripts/compress.sh "<wav-file>"
-   ```
+**4a. Compress WAV → MP3** (all modes with audio):
+```bash
+bash skills/transcribe-meeting/scripts/compress.sh "<wav-file>"
+```
 
-2. **Upload** the MP3 to Google Drive:
-   ```bash
-   bash skills/transcribe-meeting/scripts/upload-gdrive.sh "<mp3-file>"
-   ```
-   Capture the Google Drive URL from stdout.
+**4b. Upload MP3 to Google Drive** (all modes with audio):
+```bash
+bash skills/transcribe-meeting/scripts/upload-gdrive.sh "<mp3-file>"
+```
+Capture the Google Drive URL from stdout. Update `audio_url` in the meeting note frontmatter.
 
-3. **Update the meeting note**: Replace the local `audio_url` path with the Google Drive URL in the frontmatter:
-   ```
-   audio_url: "https://drive.google.com/file/d/.../view"
-   ```
+**4c. Merge video + Rodecaster audio** (omarchy+rodecaster mode only):
+```bash
+bash skills/transcribe-meeting/scripts/merge-av.sh "<video-file>" "<rodecaster-wav>"
+```
+Capture the merged MP4 path from stdout. This replaces the screen recording's audio with the higher-quality Rodecaster audio.
+
+**4d. Upload video to YouTube** (omarchy+rodecaster and omarchy-only modes):
+```bash
+bash skills/transcribe-meeting/scripts/upload-youtube.sh "<video-file>" "<meeting-title>" "<summary>" "<date>"
+```
+- For `omarchy+rodecaster`: upload the **merged** MP4 (from step 4c)
+- For `omarchy-only`: upload the **original** screen recording MP4
+- Capture the YouTube URL from stdout.
+
+**4e. Update meeting note frontmatter**:
+- Set `audio_url` to the Google Drive URL (from step 4b)
+- Set `video_url` to the YouTube URL (from step 4d, if applicable)
 
 Skip this phase if the source was already a Google Drive URL.
 
@@ -178,9 +232,14 @@ Convert seconds to `H:MM:SS` or `M:SS` format:
 
 Before creating a meeting note, check if one already exists:
 
-**SD card source** — search by `recording` field:
+**Rodecaster source** — search by `recording` field:
 ```
 grep -rl 'recording: "{folder}"' "$VAULT/🎙️ Meetings/"
+```
+
+**Screen recording source** — search by `video_file` field:
+```
+grep -rl 'video_file: "{filename}"' "$VAULT/🎙️ Meetings/"
 ```
 
 **Google Drive / local source** — search by `audio_url` field:
@@ -188,7 +247,7 @@ grep -rl 'recording: "{folder}"' "$VAULT/🎙️ Meetings/"
 grep -r "audio_url:" "$VAULT/🎙️ Meetings/" | grep "<url-or-path>"
 ```
 
-If found, skip creation and return the existing note path.
+If found, skip creation and return the existing note path. A group is considered already processed if **either** its `recording` folder or `video_file` filename matches an existing note.
 
 ## Error Handling
 

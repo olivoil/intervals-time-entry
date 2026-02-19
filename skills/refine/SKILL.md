@@ -1,7 +1,7 @@
 ---
 name: refine
 description: Improve Obsidian daily notes — polish writing, add missing wikilinks, extract long sections into dedicated notes, and suggest new vault entities. Use when the user types /refine or asks to clean up daily notes.
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash(echo $*), Bash(bash skills/transcribe-meeting/*), Bash(ffmpeg *), Bash(ffprobe *), Bash(curl *), Bash(gdown *), Bash(rclone *), Bash(op read*), Bash(whisper* *), Bash(jq *), Bash(file *), Bash(stat *), Bash(ls /tmp/meeting*), Bash(ls /run/media/*), Task
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash(echo $*), Bash(bash skills/transcribe-meeting/*), Bash(ffmpeg *), Bash(ffprobe *), Bash(curl *), Bash(gdown *), Bash(rclone *), Bash(op read*), Bash(whisper* *), Bash(jq *), Bash(file *), Bash(stat *), Bash(ls /tmp/meeting*), Bash(ls /run/media/*), Bash(youtubeuploader *), Bash(ls ~/Videos/*), Task
 ---
 
 # Refine Daily Notes
@@ -20,36 +20,65 @@ Improve an Obsidian daily note by polishing prose, adding missing wikilinks to m
 
 Detect meeting recordings and transcribe them into meeting notes. Two sub-phases run in order: SD card auto-detect (primary), then Google Drive URL scan (fallback).
 
-#### Phase 1a: SD Card Recording Detection (Primary)
+#### Phase 1a: Recording Detection & Matching (Primary)
 
-1. **Discover recordings**: Run the find-recordings script for the target date:
+1. **Discover screen recordings**:
+   ```bash
+   bash skills/transcribe-meeting/scripts/find-screenrecordings.sh "{date}"
+   ```
+   Save JSON output to `/tmp/screenrecs-{date}.json`. If no screen recordings found, use empty array `[]`.
+
+2. **Discover Rodecaster recordings**:
    ```bash
    bash skills/transcribe-meeting/scripts/find-recordings.sh "{date}"
    ```
-   If the SD card is not mounted or no recordings are found, skip to Phase 1b silently.
+   Save JSON output to `/tmp/rodecaster-{date}.json`. If SD card not mounted or no recordings found, use empty array `[]`.
 
-2. **Check idempotency**: For each recording found, search for an existing meeting note:
+3. **Match recordings** by time overlap:
+   ```bash
+   bash skills/transcribe-meeting/scripts/match-recordings.sh /tmp/screenrecs-{date}.json /tmp/rodecaster-{date}.json
+   ```
+   This produces groups with `mode`, `video`, `audio`, and `transcribe_from` fields.
+
+   If both arrays are empty, skip to Phase 1b silently.
+
+4. **Check idempotency**: For each group, search for existing meeting notes by **both** `recording:` and `video_file:` fields:
    ```
    grep -rl 'recording: "{folder}"' "$VAULT/🎙️ Meetings/"
+   grep -rl 'video_file: "{filename}"' "$VAULT/🎙️ Meetings/"
    ```
-   Skip recordings that already have a meeting note.
+   Skip any group that already has a meeting note (matched by either field).
 
-3. **Match to time entries**: For each new recording, scan the daily note time entries for meeting-like entries. Use the recording's creation time and duration to correlate. Present to the user:
-   > Found a 69-min recording from 12:23 PM. Match to `[[Khov]] - sync with Don - 1`?
+5. **Match to time entries**: For each new group, scan the daily note time entries for meeting-like entries. Use the recording start time and duration to correlate. Present to the user with mode info:
+   > Found 2 recording groups:
+   > 1. **omarchy-only**: screen recording from 09:36 (30 min) — no Rodecaster match. Match to `[[EWG]] - team standup - 0.5`?
+   > 2. **omarchy+rodecaster**: screen recording from 11:02 + Rodecaster 10 (51 min). Match to `[[Khov]] - sync with Don - 1`?
 
-4. **Extract context** from the matched time entry:
+6. **Extract context** from the matched time entry:
    - **Project**: The wikilinked project name (e.g., `[[Khov]]`)
    - **Description**: The task/meeting description (e.g., "sync with Don")
    - **Participants**: Any names mentioned in the line or surrounding context
 
-5. **Spawn transcription sub-agent**: Use the **Task tool** to launch a sub-agent (subagent_type: `general-purpose`) for each new recording. Provide this prompt:
+7. **Determine audio source** for transcription:
+   - `omarchy+rodecaster` → audio = Rodecaster WAV (`audio.path`)
+   - `omarchy-only` → extract audio from screen recording:
+     ```bash
+     bash skills/transcribe-meeting/scripts/extract-audio.sh "{video.path}"
+     ```
+   - `rodecaster-only` → audio = Rodecaster WAV (`audio.path`)
+
+8. **Spawn transcription sub-agent**: Use the **Task tool** to launch a sub-agent (subagent_type: `general-purpose`) for each new group. Provide this prompt:
 
    > You are transcribing a meeting recording. Follow the instructions in `skills/transcribe-meeting/SKILL.md` to:
    > 1. The audio file is at: {wav_path}
    > 2. Transcribe it (check `echo $OBSIDIAN_WHISPER_ENGINE` for engine, default `openai`)
    > 3. Generate a meeting note with summary, decisions, action items, and transcript
    > 4. Create the note at `{vault}/🎙️ Meetings/{date} {Title}.md`
-   > 5. Set frontmatter `recording: "{folder}"` and `audio_url: "{wav_path}"`
+   > 5. Set frontmatter fields:
+   >    - `recording: "{folder}"` (if Rodecaster audio exists)
+   >    - `audio_url: "{wav_path}"`
+   >    - `video_file: "{video_filename}"` (if screen recording exists)
+   >    - `recording_mode: "{mode}"`
    >
    > Context from daily note:
    > - Date: {date}
@@ -57,23 +86,39 @@ Detect meeting recordings and transcribe them into meeting notes. Two sub-phases
    > - Description: {description}
    > - Participants: {participants}
    > - Recording folder: {folder}
+   > - Recording mode: {mode}
    > - Duration: {duration_secs} seconds
    >
    > Return the created note's filename (without path) so refine can update the daily note.
 
-6. **Compress & upload**: After transcription, compress the WAV and upload to Google Drive:
-   ```bash
-   bash skills/transcribe-meeting/scripts/compress.sh "{wav_path}"
-   bash skills/transcribe-meeting/scripts/upload-gdrive.sh "/tmp/meeting-archive/{filename}.mp3"
-   ```
-   Capture the Google Drive URL from the upload script's stdout. Then update the meeting note's `audio_url` frontmatter field with the Drive URL.
+9. **Post-process & upload**: After transcription completes for each group:
 
-7. **Update daily note**: Append a wikilink to the matched time entry line:
-   ```
-   - [[Khov]] - sync with Don - 1 - [[2026-02-18 Khov Sync with Don]]
-   ```
+   a. **Compress WAV → MP3** and **upload to Google Drive**:
+      ```bash
+      bash skills/transcribe-meeting/scripts/compress.sh "{wav_path}"
+      bash skills/transcribe-meeting/scripts/upload-gdrive.sh "/tmp/meeting-archive/{filename}.mp3"
+      ```
+      Capture the Google Drive URL. Update `audio_url` in the meeting note.
 
-8. **Update project note**: If the project has a note in `$VAULT/🗂️ Projects/`, add a `## Meetings` section (or append to existing) with a wikilink to the meeting note.
+   b. **Merge video + audio** (omarchy+rodecaster only):
+      ```bash
+      bash skills/transcribe-meeting/scripts/merge-av.sh "{video.path}" "{audio.path}"
+      ```
+
+   c. **Upload to YouTube** (omarchy+rodecaster and omarchy-only):
+      ```bash
+      bash skills/transcribe-meeting/scripts/upload-youtube.sh "{video_file}" "{meeting_title}" "{summary}" "{date}"
+      ```
+      - For `omarchy+rodecaster`: upload the **merged** MP4
+      - For `omarchy-only`: upload the **original** screen recording MP4
+      - Capture the YouTube URL. Update `video_url` in the meeting note.
+
+10. **Update daily note**: Append a wikilink to the matched time entry line:
+    ```
+    - [[Khov]] - sync with Don - 1 - [[2026-02-18 Khov Sync with Don]]
+    ```
+
+11. **Update project note**: If the project has a note in `$VAULT/🗂️ Projects/`, add a `## Meetings` section (or append to existing) with a wikilink to the meeting note.
 
 **Present the transcription summary to the user for confirmation before writing the meeting note** (consistent with refine's preview-before-applying pattern).
 
