@@ -1,7 +1,7 @@
 ---
 name: refine
 description: Improve Obsidian daily notes — polish writing, add missing wikilinks, extract long sections into dedicated notes, and suggest new vault entities. Use when the user types /refine or asks to clean up daily notes.
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash(echo $*), Bash(bash skills/transcribe-meeting/*), Bash(ffmpeg *), Bash(ffprobe *), Bash(curl *), Bash(gdown *), Bash(rclone *), Bash(op read*), Bash(whisper* *), Bash(jq *), Bash(file *), Bash(stat *), Bash(ls /tmp/meeting*), Bash(ls /run/media/*), Bash(youtubeuploader *), Bash(ls ~/Videos/*), Task
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash(echo $*), Bash(bash skills/transcribe-meeting/*), Bash(ffmpeg *), Bash(ffprobe *), Bash(curl *), Bash(gdown *), Bash(rclone *), Bash(op read*), Bash(whisper* *), Bash(jq *), Bash(file *), Bash(stat *), Bash(ls /tmp/meeting*), Bash(ls /run/media/*), Bash(youtubeuploader *), Bash(ls ~/Videos/*), Bash(bc *)
 ---
 
 # Refine Daily Notes
@@ -67,29 +67,30 @@ Detect meeting recordings and transcribe them into meeting notes. Two sub-phases
      ```
    - `rodecaster-only` → audio = Rodecaster WAV (`audio.path`)
 
-8. **Spawn transcription sub-agent**: Use the **Task tool** to launch a sub-agent (subagent_type: `general-purpose`) for each new group. Provide this prompt:
+8. **Transcribe inline** (do NOT use Task/sub-agents — they lack bash permissions). For each new group:
 
-   > You are transcribing a meeting recording. Follow the instructions in `skills/transcribe-meeting/SKILL.md` to:
-   > 1. The audio file is at: {wav_path}
-   > 2. Transcribe it (check `echo $OBSIDIAN_WHISPER_ENGINE` for engine, default `openai`)
-   > 3. Generate a meeting note with summary, decisions, action items, and transcript
-   > 4. Create the note at `{vault}/🎙️ Meetings/{date} {Title}.md`
-   > 5. Set frontmatter fields:
-   >    - `recording: "{folder}"` (if Rodecaster audio exists)
-   >    - `audio_url: "{wav_path}"`
-   >    - `video_file: "{video_filename}"` (if screen recording exists)
-   >    - `recording_mode: "{mode}"`
-   >
-   > Context from daily note:
-   > - Date: {date}
-   > - Project: {project}
-   > - Description: {description}
-   > - Participants: {participants}
-   > - Recording folder: {folder}
-   > - Recording mode: {mode}
-   > - Duration: {duration_secs} seconds
-   >
-   > Return the created note's filename (without path) so refine can update the daily note.
+   a. Determine the engine: `echo $OBSIDIAN_WHISPER_ENGINE` (defaults to `openai` if unset).
+   b. Run transcription directly:
+      ```bash
+      bash skills/transcribe-meeting/scripts/transcribe.sh "{wav_path}" "{engine}"
+      ```
+   c. Capture the JSON output (array of `{start, end, text}` segments).
+   d. Generate a meeting note following the format in `skills/transcribe-meeting/SKILL.md` Phase 3:
+      - Title, Summary, Decisions, Action Items, Open Questions, Transcript
+      - Use context from the matched time entry (project, description, participants)
+   e. **Present the summary to the user for approval** before writing.
+   f. Create the meeting note at `$VAULT/🎙️ Meetings/{date} {Title}.md` with frontmatter:
+      - `recording: "{folder}"` (if Rodecaster audio exists)
+      - `audio_url: "{wav_path}"`
+      - `video_file: "{video_filename}"` (if screen recording exists)
+      - `recording_mode: "{mode}"`
+
+   **Phase 3.5: Extract Key Screenshots** (only when video recording exists):
+   After creating the meeting note, scan the transcript for visual moments (screen sharing, demos, "as you can see", "look at this", code references, topic transitions). Select 3-8 key timestamps and extract frames:
+   ```bash
+   ffmpeg -ss {secs} -i "{video}" -frames:v 1 -q:v 2 -y "$VAULT/🗜️Attachments/{name}-{MM-SS}.png"
+   ```
+   Then edit the meeting note to embed screenshots at corresponding transcript positions using `![[filename.png]]`.
 
 9. **Post-process & upload**: After transcription completes for each group:
 
@@ -136,21 +137,21 @@ Scan the daily note for Google Drive audio links and transcribe them into meetin
    - **Project**: The wikilinked project name (e.g., `[[Khov]]`)
    - **Description**: The task/meeting description (e.g., "sync with Don")
    - **Participants**: Any names mentioned in the line or surrounding context
-4. **Spawn transcription sub-agent**: Use the **Task tool** to launch a sub-agent (subagent_type: `general-purpose`) for each new recording. Provide this prompt:
+4. **Transcribe inline** (do NOT use Task/sub-agents). For each new recording:
 
-   > You are transcribing a meeting recording. Follow the instructions in `skills/transcribe-meeting/SKILL.md` to:
-   > 1. Download the audio from: {url}
-   > 2. Transcribe it (check `echo $OBSIDIAN_WHISPER_ENGINE` for engine, default `openai`)
-   > 3. Generate a meeting note with summary, decisions, action items, and transcript
-   > 4. Create the note at `{vault}/🎙️ Meetings/{date} {Title}.md`
-   >
-   > Context from daily note:
-   > - Date: {date}
-   > - Project: {project}
-   > - Description: {description}
-   > - Participants: {participants}
-   >
-   > Return the created note's filename (without path) so refine can update the daily note.
+   a. Download the audio:
+      ```bash
+      bash skills/transcribe-meeting/scripts/download-gdrive.sh "{url}"
+      ```
+   b. Determine the engine: `echo $OBSIDIAN_WHISPER_ENGINE` (defaults to `openai` if unset).
+   c. Run transcription directly:
+      ```bash
+      bash skills/transcribe-meeting/scripts/transcribe.sh "{local_audio_path}" "{engine}"
+      ```
+   d. Capture the JSON output (array of `{start, end, text}` segments).
+   e. Generate a meeting note following the format in `skills/transcribe-meeting/SKILL.md` Phase 3.
+   f. **Present the summary to the user for approval** before writing.
+   g. Create the meeting note at `$VAULT/🎙️ Meetings/{date} {Title}.md`.
 
 5. **Update daily note**: Replace the Google Drive link in the daily note line:
    ```

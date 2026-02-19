@@ -1,7 +1,7 @@
 ---
 name: transcribe-meeting
 description: Transcribe a meeting recording from the Rodecaster SD card, Google Drive, or a local file. Creates a meeting note with summary, decisions, and action items, plus an MP3 archive. Use when the user types /transcribe-meeting or asks to transcribe a recording.
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash(echo $*), Bash(bash skills/transcribe-meeting/*), Bash(ffmpeg *), Bash(ffprobe *), Bash(curl *), Bash(gdown *), Bash(rclone *), Bash(op read*), Bash(whisper* *), Bash(jq *), Bash(file *), Bash(stat *), Bash(ls /tmp/meeting*), Bash(ls /run/media/*), Bash(youtubeuploader *), Bash(ls ~/Videos/*), Task
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash(echo $*), Bash(bash skills/transcribe-meeting/*), Bash(ffmpeg *), Bash(ffprobe *), Bash(curl *), Bash(gdown *), Bash(rclone *), Bash(op read*), Bash(whisper* *), Bash(jq *), Bash(file *), Bash(stat *), Bash(ls /tmp/meeting*), Bash(ls /run/media/*), Bash(youtubeuploader *), Bash(ls ~/Videos/*), Bash(bc *)
 ---
 
 # Transcribe Meeting
@@ -165,6 +165,36 @@ Frontmatter notes:
 - **Local file source**: set `audio_url: "{path}"`. Omit `recording` field — Phase 4 will replace it with the Google Drive URL after upload.
 
 **Present the summary, decisions, and action items to the user for approval before writing the file.**
+
+### Phase 3.5: Extract Key Screenshots
+
+**Only applies when a video recording exists** (omarchy+rodecaster or omarchy-only modes).
+
+1. **Scan transcript for visual moments** — look for indicators like:
+   - Screen sharing or demo segments
+   - Phrases: "as you can see", "look at this", "let me show you", "on the screen"
+   - Code references or technical discussions with visual context
+   - Topic transitions (good for section dividers)
+   - Architecture diagrams, UI walkthroughs, slide presentations
+
+2. **Select 3-8 key timestamps** — spread across the meeting, prioritizing moments with unique visual content. Avoid extracting frames too close together (at least 2 minutes apart).
+
+3. **Extract frames** with ffmpeg:
+   ```bash
+   ffmpeg -ss {seconds} -i "{video_path}" -frames:v 1 -q:v 2 -y "$VAULT/🗜️Attachments/{meeting-name}-{MM-SS}.png"
+   ```
+   Where `{MM-SS}` is the timestamp in the recording (e.g., `05-30` for 5:30).
+
+4. **Embed in meeting note** — edit the meeting note to insert screenshots at the corresponding positions in the transcript:
+   ```markdown
+   [5:30] Discussion about the new dashboard layout...
+
+   ![[Meeting Name-05-30.png]]
+
+   [5:45] Next topic...
+   ```
+
+5. **Skip this phase** if no video file exists or if the video file is inaccessible.
 
 ### Phase 4: Post-Process & Upload
 

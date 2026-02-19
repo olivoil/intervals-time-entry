@@ -48,7 +48,13 @@ if [ ! -f "$SECRETS_FILE" ]; then
     exit 1
 fi
 
-BASENAME=$(basename "$VIDEO")
+# Create a symlink with a clean filename so YouTube uses the meeting title
+# (youtubeuploader may use the filename as fallback title)
+CLEAN_TITLE=$(echo "$TITLE" | sed 's/[^a-zA-Z0-9 -]//g' | tr ' ' '-')
+UPLOAD_FILE="/tmp/${RECORDING_DATE:-upload}-${CLEAN_TITLE}.mp4"
+ln -sf "$(realpath "$VIDEO")" "$UPLOAD_FILE"
+
+BASENAME=$(basename "$UPLOAD_FILE")
 CACHE_FILE="/tmp/youtube-result-${BASENAME}.json"
 
 # Idempotent: check cache
@@ -63,7 +69,7 @@ fi
 
 # Build metadata JSON
 META_FILE=$(mktemp /tmp/youtube-meta-XXXXXX.json)
-trap 'rm -f "$META_FILE"' EXIT
+trap 'rm -f "$META_FILE" "$UPLOAD_FILE"' EXIT
 
 META_JSON=$(jq -n \
     --arg title "$TITLE" \
@@ -86,11 +92,11 @@ META_JSON=$(jq -n \
 
 echo "$META_JSON" > "$META_FILE"
 
-echo "Uploading to YouTube: $(basename "$VIDEO") as '$TITLE'..." >&2
+echo "Uploading to YouTube: $(basename "$UPLOAD_FILE") as '$TITLE'..." >&2
 
 # Run youtubeuploader
 OUTPUT=$(youtubeuploader \
-    -filename "$VIDEO" \
+    -filename "$UPLOAD_FILE" \
     -metaJSON "$META_FILE" \
     -secrets "$SECRETS_FILE" \
     -cache "$TOKEN_FILE" \

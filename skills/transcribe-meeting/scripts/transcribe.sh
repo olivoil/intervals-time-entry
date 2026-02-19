@@ -31,8 +31,12 @@ WAV_FILE="/tmp/${BASENAME}_16k.wav"
 
 if [ ! -f "$WAV_FILE" ]; then
     echo "Preprocessing: converting to WAV 16kHz mono..." >&2
-    ffmpeg -i "$AUDIO_FILE" -ar 16000 -ac 1 -c:a pcm_s16le "$WAV_FILE" -y -loglevel warning 2>&2
+    ffmpeg -i "$AUDIO_FILE" -ar 16000 -ac 1 -c:a pcm_s16le "$WAV_FILE" -y -loglevel warning 2>&1 >&2
 fi
+
+# --- Trim trailing silence to prevent whisper hallucination ---
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+WAV_FILE=$(bash "$SCRIPT_DIR/trim-silence.sh" "$WAV_FILE")
 
 # --- Check file size and chunk if needed (OpenAI has 25MB limit) ---
 FILE_SIZE=$(stat -c%s "$WAV_FILE" 2>/dev/null || stat -f%z "$WAV_FILE")
@@ -59,8 +63,9 @@ transcribe_local_chunk() {
         --model /home/olivier/.local/share/pywhispercpp/models/ggml-large-v3.bin \
         --output-json \
         --output-file "$output_file" \
+        --no-speech-thold 0.80 \
         --file "$chunk_file" \
-        2>&2
+        >/dev/null 2>&1
 
     jq '.transcription // [] | map({start: .offsets.from, end: .offsets.to, text})' "${output_file}.json"
     rm -f "${output_file}.json"
@@ -103,7 +108,7 @@ else
         CHUNK_FILE="${CHUNK_DIR}/chunk_${OFFSET}.wav"
         echo "  Extracting chunk at ${OFFSET}s..." >&2
 
-        ffmpeg -i "$WAV_FILE" -ss "$OFFSET" -t "$CHUNK_SECS" -c:a pcm_s16le "$CHUNK_FILE" -y -loglevel warning 2>&2
+        ffmpeg -i "$WAV_FILE" -ss "$OFFSET" -t "$CHUNK_SECS" -c:a pcm_s16le "$CHUNK_FILE" -y -loglevel warning 2>&1 >&2
 
         echo "  Transcribing chunk at ${OFFSET}s..." >&2
         CHUNK_RESULT=$(transcribe_openai_chunk "$CHUNK_FILE" "$OPENAI_API_KEY")
