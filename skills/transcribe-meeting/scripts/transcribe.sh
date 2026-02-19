@@ -55,9 +55,9 @@ transcribe_local_chunk() {
     local chunk_file="$1"
     local output_file="/tmp/whisper_output_$$"
 
-    whisper-cpp \
-        --model /usr/share/whisper.cpp/models/ggml-medium.bin \
-        --output-format json \
+    whisper-cli \
+        --model /home/olivier/.local/share/pywhispercpp/models/ggml-large-v3.bin \
+        --output-json \
         --output-file "$output_file" \
         --file "$chunk_file" \
         2>&2

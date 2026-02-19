@@ -1,7 +1,7 @@
 ---
 name: transcribe-meeting
 description: Transcribe a meeting recording from the Rodecaster SD card, Google Drive, or a local file. Creates a meeting note with summary, decisions, and action items, plus an MP3 archive. Use when the user types /transcribe-meeting or asks to transcribe a recording.
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash(echo $*), Bash(bash skills/transcribe-meeting/*), Bash(ffmpeg *), Bash(ffprobe *), Bash(curl *), Bash(gdown *), Bash(op read*), Bash(whisper* *), Bash(jq *), Bash(file *), Bash(stat *), Bash(ls /tmp/meeting*), Bash(ls /run/media/*), Task
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash(echo $*), Bash(bash skills/transcribe-meeting/*), Bash(ffmpeg *), Bash(ffprobe *), Bash(curl *), Bash(gdown *), Bash(rclone *), Bash(op read*), Bash(whisper* *), Bash(jq *), Bash(file *), Bash(stat *), Bash(ls /tmp/meeting*), Bash(ls /run/media/*), Task
 ---
 
 # Transcribe Meeting
@@ -119,24 +119,33 @@ tags: [meeting]
 ```
 
 Frontmatter notes:
-- **SD card source**: set `recording: "{folder}"` (e.g., `recording: "9 - 18 Feb 2026"`). Set `audio_url` to the WAV path.
+- **SD card source**: set `recording: "{folder}"` (e.g., `recording: "9 - 18 Feb 2026"`). Set `audio_url` to the WAV path initially — Phase 4 will replace it with the Google Drive URL after upload.
 - **Google Drive source**: set `audio_url: "{url}"`. Omit `recording` field.
-- **Local file source**: set `audio_url: "{path}"`. Omit `recording` field.
+- **Local file source**: set `audio_url: "{path}"`. Omit `recording` field — Phase 4 will replace it with the Google Drive URL after upload.
 
 **Present the summary, decisions, and action items to the user for approval before writing the file.**
 
-### Phase 4: Compress MP3 Archive
+### Phase 4: Compress & Upload to Google Drive
 
-After the meeting note is created, compress the audio for archival:
+After the meeting note is created, compress the audio and upload it:
 
-```bash
-bash skills/transcribe-meeting/scripts/compress.sh "<wav-file>"
-```
+1. **Compress** the WAV to MP3:
+   ```bash
+   bash skills/transcribe-meeting/scripts/compress.sh "<wav-file>"
+   ```
 
-Report the MP3 path to the user:
-> MP3 archive saved to `/tmp/meeting-archive/Stereo Mix.mp3` (32MB) — upload to Google Drive at your convenience.
+2. **Upload** the MP3 to Google Drive:
+   ```bash
+   bash skills/transcribe-meeting/scripts/upload-gdrive.sh "<mp3-file>"
+   ```
+   Capture the Google Drive URL from stdout.
 
-Skip this step if the source was already an MP3 or a Google Drive URL.
+3. **Update the meeting note**: Replace the local `audio_url` path with the Google Drive URL in the frontmatter:
+   ```
+   audio_url: "https://drive.google.com/file/d/.../view"
+   ```
+
+Skip this phase if the source was already a Google Drive URL.
 
 ### Phase 5: Link from Daily Note (if applicable)
 

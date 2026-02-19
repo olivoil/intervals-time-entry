@@ -1,7 +1,7 @@
 ---
 name: refine
 description: Improve Obsidian daily notes — polish writing, add missing wikilinks, extract long sections into dedicated notes, and suggest new vault entities. Use when the user types /refine or asks to clean up daily notes.
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash(echo $*), Bash(bash skills/transcribe-meeting/*), Bash(ffmpeg *), Bash(ffprobe *), Bash(curl *), Bash(gdown *), Bash(op read*), Bash(whisper* *), Bash(jq *), Bash(file *), Bash(stat *), Bash(ls /tmp/meeting*), Bash(ls /run/media/*), Task
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash(echo $*), Bash(bash skills/transcribe-meeting/*), Bash(ffmpeg *), Bash(ffprobe *), Bash(curl *), Bash(gdown *), Bash(rclone *), Bash(op read*), Bash(whisper* *), Bash(jq *), Bash(file *), Bash(stat *), Bash(ls /tmp/meeting*), Bash(ls /run/media/*), Task
 ---
 
 # Refine Daily Notes
@@ -61,12 +61,12 @@ Detect meeting recordings and transcribe them into meeting notes. Two sub-phases
    >
    > Return the created note's filename (without path) so refine can update the daily note.
 
-6. **Compress MP3 archive**: After transcription, compress the WAV:
+6. **Compress & upload**: After transcription, compress the WAV and upload to Google Drive:
    ```bash
    bash skills/transcribe-meeting/scripts/compress.sh "{wav_path}"
+   bash skills/transcribe-meeting/scripts/upload-gdrive.sh "/tmp/meeting-archive/{filename}.mp3"
    ```
-   Report the MP3 path to the user:
-   > MP3 archive saved to `/tmp/meeting-archive/Stereo Mix.mp3` (32MB) — upload to Google Drive at your convenience.
+   Capture the Google Drive URL from the upload script's stdout. Then update the meeting note's `audio_url` frontmatter field with the Drive URL.
 
 7. **Update daily note**: Append a wikilink to the matched time entry line:
    ```
